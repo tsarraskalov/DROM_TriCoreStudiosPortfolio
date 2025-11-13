@@ -1,0 +1,53 @@
+local rs = game:GetService("ReplicatedStorage")
+local ds = game:GetService("DataStoreService")
+
+local DROM_REPS = rs:WaitForChild("DROM_REPS")
+local AMD_EditCaseSubmit = DROM_REPS:WaitForChild("AMD_EditCaseSubmit") -- i do not trust staff with this ngl 
+
+local modlogs = ds:GetDataStore("AMD_ModlogsStore")
+local bans = ds:GetDataStore("AMD_BanStore")
+
+local group = 218935690
+local minrank = 252
+
+local function getCase(caseNumber)
+	local success, caseData = pcall(function()
+		return modlogs:GetAsync("AMD_Case_"..caseNumber)
+	end)
+	if success then return caseData end
+	return nil
+end
+
+AMD_EditCaseSubmit.OnServerEvent:Connect(function(player, caseNumber, edits)
+	if player:GetRankInGroup(group) < minrank then return end
+	if type(caseNumber) ~= "number" then return end
+	if type(edits) ~= "table" then return end
+
+	local caseData = getCase(caseNumber)
+	if not caseData then return end
+
+	if edits.Reason ~= nil then
+		caseData.Reason = tostring(edits.Reason)
+	end
+
+	if caseData.ActionType and caseData.ActionType:lower() == "ban" and edits.Duration then
+		local durationSec = tonumber(edits.Duration) or 0
+		local expiry = (durationSec > 0) and (os.time() + durationSec) or 0
+
+		local userId = caseData.User and caseData.User.UserId
+		if userId then
+			pcall(function()
+				bans:SetAsync("AMD_"..userId, {
+					Expiry = expiry,
+					Reason = caseData.Reason or "bonked by comically-large hammer"
+				})
+			end)
+			caseData.TimeEnd = expiry
+		end
+	end
+
+	pcall(function()
+		modlogs:SetAsync("AMD_Case_"..caseNumber, caseData)
+	end)
+
+end)
