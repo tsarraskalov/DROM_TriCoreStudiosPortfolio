@@ -1,0 +1,47 @@
+local specimens = game:GetService("Players")
+local group = 218935690
+local minrank = 251
+
+local UsernameCommand = {}
+
+UsernameCommand.Name = "username" -- spent like 30 minutes wondering why it didn't work meanwhile i put a semicolon here by accident
+UsernameCommand.Description = "Changes the overhead displayed username."
+UsernameCommand.Usage = ";username <target> <newName>"
+
+local maxlength = 40
+
+local function nameset(player, value)
+	local tag = player:FindFirstChild("CustomName")
+	if not tag then
+		tag = Instance.new("StringValue")
+		tag.Name = "CustomName"
+		tag.Parent = player
+	end
+	tag.Value = value
+end
+
+function UsernameCommand.Execute(invoker, args, targets)
+	if invoker:GetRankInGroup(group) < minrank then
+		return "Insufficient permissions"
+	end
+
+	if #args == 0 then
+		return "Invalid arguments"
+	end
+
+	local updatedname = table.concat(args, " ") -- had a problem earlier with the overhead including "me" instead of assuming invoker as target
+
+	if #updatedname > maxlength then
+		return "Name is too long, maximum of " .. maxlength .. " characters"
+	end
+
+	for _, target in ipairs(targets) do
+		if target:IsA("Player") then
+			nameset(target, updatedname)
+		end
+	end
+
+	return "updated"
+end
+
+return UsernameCommand
