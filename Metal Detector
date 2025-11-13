@@ -1,0 +1,107 @@
+local detector = script.Parent
+local sensor = detector:WaitForChild("Sensor")
+local redlight = detector:WaitForChild("RedLight")
+local alarmsound = detector:WaitForChild("AlarmSound")
+local resetpanel = detector:WaitForChild("ResetPanel")
+
+local Players = game:GetService("Players")
+local rs = game:GetService("RunService")
+local StarterGui = game:GetService("StarterGui")
+
+local contrabandTools = {"M19","G22","Knife"}
+
+local bypassTools = {"Employee Pass","Criminal Pass", "Sheriff's Pass"}
+
+local resetTools = {"Employee Pass","Criminal Pass", "Sheriff's Pass"}
+
+local alarmActive = false
+local flashConnection
+
+local reset = resetpanel:FindFirstChildOfClass("ProximityPrompt")
+reset.Enabled = false
+
+alarmsound.Looped = true
+alarmsound.RollOffMode = Enum.RollOffMode.Linear
+alarmsound.MaxDistance = 40
+
+local function hasAnyTool(player, toolList)
+	local backpack = player:FindFirstChild("Backpack")
+	local character = player.Character
+	if not backpack or not character then return false end
+	for _, t in ipairs(toolList) do
+		if backpack:FindFirstChild(t) or character:FindFirstChild(t) then
+			return true
+		end
+	end
+	return false
+end
+
+local function hasContraband(player) 
+	return hasAnyTool(player, contrabandTools) 
+end
+
+local function hasBypass(player) 
+	return hasAnyTool(player, bypassTools) 
+end
+local function canReset(player) 
+	return hasAnyTool(player, resetTools) 
+end
+
+local function startAlarm()
+	if alarmActive then return end
+	alarmActive = true
+	reset.Enabled = true
+
+	flashConnection = rs.Heartbeat:Connect(function()
+		local blink = (tick() % 1) < 0.5
+		redlight.Material = Enum.Material.Neon
+		redlight.BrickColor = BrickColor.Red()
+		redlight.Transparency = blink and 0 or 0.5
+	end)
+
+	if alarmsound then
+		alarmsound:Play()
+	end
+end
+
+local function stopAlarm()
+	if not alarmActive then return end
+	alarmActive = false
+	reset.Enabled = false
+
+	if flashConnection then
+		flashConnection:Disconnect()
+		flashConnection = nil
+	end
+
+	redlight.Transparency = 0.5
+	redlight.Material = Enum.Material.SmoothPlastic
+
+	if alarmsound then
+		alarmsound:Stop()
+	end
+end
+
+sensor.Touched:Connect(function(hit)
+	local character = hit.Parent
+	local player = Players:GetPlayerFromCharacter(character)
+	if not player then return end
+
+	if hasBypass(player) then return end
+
+	if hasContraband(player) then
+		startAlarm()
+	end
+end)
+
+reset.Triggered:Connect(function(player)
+	if canReset(player) then
+		stopAlarm()
+	else
+		StarterGui:SetCore("SendNotification", {
+			Title = "Failure",
+			Text = "Level 1 pass required",
+			Duration = 3
+		})
+	end
+end)
