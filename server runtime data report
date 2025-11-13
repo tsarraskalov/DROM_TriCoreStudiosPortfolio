@@ -1,0 +1,63 @@
+local specimens = game:GetService("Players")
+local https = game:GetService("HttpService")
+local rs = game:GetService("RunService")
+local wh = "https://discord.com/api/webhooks/PRETEND THAT THERE IS AN INTEGRATION LINK HERE"
+local timebegin = os.time()
+local serverhost = nil
+local playerlog = {}
+
+specimens.PlayerAdded:Connect(function(player)
+	if not serverhost then
+		serverhost = player
+	end
+	table.insert(playerlog, player)
+end)
+
+local function unix(timestamp, format)
+	format = format or "f"
+	return string.format("<t:%d:%s>", timestamp, format)
+end
+
+local function postServerReport()
+	local timeend = os.time()
+
+	local hoststring = serverhost and string.format("%s (%s) | UserId: %d", serverhost.DisplayName, serverhost.Name, serverhost.UserId) 
+		or "No players joined"
+
+	local spectext = ""
+	for _, player in ipairs(playerlog) do
+		spectext = spectext .. string.format("- %s (%s) | UserId: %d\n", player.DisplayName, player.Name, player.UserId)
+	end
+	if spectext == "" then
+		spectext = "No players joined."
+	end
+
+	local payload = {
+		embeds = {{
+			title = "Server Runtime Report",
+			description = string.format(
+				"**Job ID:** %s\n**Place ID:** %s\n**Game ID :** %s\n**TIME BEGIN :** %s\n**TIME END :** %s\n**FIRST USER :** %s\n**USERS JOINED :** %d\n\n**USER LIST :**\n%s\n**IS STUDIO :** %s\n**MEMORY USAGE (KB) :** %d",
+				game.JobId or "[HIDDEN BY SYSTEM]",
+				game.PlaceId,
+				game.GameId,
+				unix(timebegin),
+				unix(timeend),
+				hoststring,
+				#playerlog,
+				spectext,
+				tostring(rs:IsStudio()),
+				collectgarbage("count")
+			),
+			color = 5814783
+		}}
+	}
+
+	local success, err = pcall(function()
+		https:PostAsync(wh, https:JSONEncode(payload), Enum.HttpContentType.ApplicationJson)
+	end)
+	if not success then
+		warn("Fatal error; couldn't send webhook:", err)
+	end
+end
+
+game:BindToClose(postServerReport)
