@@ -1,0 +1,281 @@
+local tool = script.Parent
+local specimens = game:GetService("Players")
+local rs = game:GetService("rs")
+local serverstorage = game:GetService("ServerStorage")
+local detaincheck = tool:FindFirstChild("DetainCheck") 
+detaincheck.Name = "DetainCheck"
+detaincheck.Parent = tool
+local detainevent = tool:FindFirstChild("DetainEvent") 
+local function getroot(model)
+	if not model then return nil end
+	return model:FindFirstChild("HumanoidRootPart")
+		or model:FindFirstChild("Torso")
+		or model:FindFirstChild("UpperTorso")
+end
+
+local function getorcreatestoragefolderforplayer(player)
+	local foldername = "DetainedTools_" .. tostring(player.UserId)
+	local existing = serverstorage:FindFirstChild(foldername)
+	if existing and existing:IsA("Folder") then
+		return existing
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = foldername
+	folder.Parent = serverstorage
+	return folder
+end
+
+local function fakedeltools(player)
+	local storage = getorcreatestoragefolderforplayer(player)
+	local moved = {}
+	local conns = {}
+
+	local function movetool(tool)
+		if not tool or not tool:IsA("Tool") then return end
+		pcall(function()
+			tool.Parent = storage
+		end)
+		table.insert(moved, tool)
+	end
+
+	if player.Character then
+		for _, obj in ipairs(player.Character:GetChildren()) do
+			if obj:IsA("Tool") then
+				movetool(obj)
+			end
+		end
+	end
+
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if backpack then
+		for _, obj in ipairs(backpack:GetChildren()) do
+			if obj:IsA("Tool") then
+				movetool(obj)
+			end
+		end
+	end
+
+	if backpack then
+		local c1 = backpack.ChildAdded:Connect(function(child)
+			if child and child:IsA("Tool") then
+				task.defer(function()
+					if cuffed[player.UserId] and child.Parent == backpack then
+						pcall(function() child.Parent = storage end)
+					end
+				end)
+			end
+		end)
+		table.insert(conns, c1)
+	end
+
+	if player.Character then
+		local c2 = player.Character.ChildAdded:Connect(function(child)
+			if child and child:IsA("Tool") then
+				task.defer(function()
+					if cuffed[player.UserId] and child.Parent == player.Character then
+						pcall(function() child.Parent = storage end)
+					end
+				end)
+			end
+		end)
+		table.insert(conns, c2)
+	end
+
+	return storage, moved, conns
+end
+
+local function revtools(player, storagefolder)
+	if not storagefolder or not storagefolder.Parent then return end
+
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	if not backpack then
+		for i = 1, 10 do
+			task.wait(0.1)
+			backpack = player:FindFirstChildOfClass("Backpack")
+			if backpack then break end
+		end
+	end
+
+	if not backpack then
+		for _, tool in ipairs(storagefolder:GetChildren()) do
+			if tool and tool:IsA("Tool") then
+				pcall(function() tool.Parent = player end)
+			end
+		end
+	else
+		for _, tool in ipairs(storagefolder:GetChildren()) do
+			if tool and tool:IsA("Tool") then
+				pcall(function() tool.Parent = backpack end)
+			end
+		end
+	end
+
+	if storagefolder and storagefolder.Parent and #storagefolder:GetChildren() == 0 then
+		pcall(function() storagefolder:Destroy() end)
+	end
+end
+
+local cuffed = {}
+
+local function release(targetplayer)
+	if not targetplayer then return end
+	local data = cuffed[targetplayer.UserId]
+	if not data then return end
+
+	if data.conn then pcall(function() data.conn:Disconnect() end) end
+	if data.weld and data.weld.Parent then pcall(function() data.weld:Destroy() end) end
+
+	local char = targetplayer.Character
+	if char then
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		local root = getroot(char)
+		if hum then
+			pcall(function()
+				hum.WalkSpeed = data.oldwalkspeed or 16
+				if data.oldusejumppower then
+					hum.JumpPower = data.oldjumppower or 50
+					hum.UseJumpPower = true
+				else
+					hum.JumpHeight = data.oldjumppower or 7.2
+					hum.UseJumpPower = false
+				end
+				hum.PlatformStand = data.oldplatformstand
+				hum.AutoRotate = data.oldautorotate
+				hum.CameraOffset = Vector3.new(0, 0, 0)
+				hum.CameraSubject = hum
+			end)
+		end
+		if root and data.oldcancollide ~= nil then
+			pcall(function() root.CanCollide = data.oldcancollide end)
+		end
+	end
+
+	if data.storagefolder then
+		pcall(function()
+			if data.conns then
+				for _, c in ipairs(data.conns) do
+					pcall(function() c:Disconnect() end)
+				end
+			end
+			revtools(targetplayer, data.storagefolder)
+		end)
+	end
+
+	if data.officer and data.officer.Parent then
+		pcall(function() detainevent:FireClient(data.officer, "HideRelease") end)
+	end
+
+	cuffed[targetplayer.UserId] = nil
+end
+
+local function detain(officer, targetchar)
+	if not (officer and targetchar) then return end
+	local targetplayer = specimens:GetPlayerFromCharacter(targetchar)
+	if not targetplayer then return end
+	if cuffed[targetplayer.UserId] then return end
+	if officer == targetplayer then return end
+
+	local officerchar = officer.Character
+	if not officerchar then return end
+
+	local officerroot = getroot(officerchar)
+	local targetroot = getroot(targetchar)
+	local targethum = targetchar:FindFirstChildOfClass("Humanoid")
+	if not (officerroot and targetroot and targethum) then return end
+
+	local oldws = targethum.WalkSpeed
+	local oldusejumppower = targethum.UseJumpPower
+	local oldjp = oldusejumppower and targethum.JumpPower or targethum.JumpHeight
+	local oldplatform = targethum.PlatformStand
+	local oldautorotate = targethum.AutoRotate
+	local oldcancollide = targetroot.CanCollide
+
+	pcall(function()
+		targetroot.CFrame = officerroot.CFrame * CFrame.new(0, 0, -3)
+	end)
+
+	rs.Heartbeat:Wait()
+	rs.Heartbeat:Wait()
+
+	pcall(function()
+		targethum.WalkSpeed = 0
+		if oldusejumppower then
+			targethum.JumpPower = 0
+		else
+			targethum.JumpHeight = 0
+		end
+		targethum.PlatformStand = true
+		targethum.AutoRotate = false
+		targetroot.CanCollide = false
+		targetroot.AssemblyLinearVelocity = Vector3.zero
+		targetroot.AssemblyAngularVelocity = Vector3.zero
+		targethum.CameraOffset = Vector3.new(0, 0, 0)
+		targethum.CameraSubject = targethum
+	end)
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = officerroot
+	weld.Part1 = targetroot
+	weld.Parent = officerroot
+
+	cuffed[targetplayer.UserId] = {
+		officer = officer,
+		targetplayer = targetplayer,
+		weld = weld,
+		oldwalkspeed = oldws,
+		oldusejumppower = oldusejumppower,
+		oldjumppower = oldjp,
+		oldplatformstand = oldplatform,
+		oldautorotate = oldautorotate,
+		oldcancollide = oldcancollide,
+	}
+
+	local ok, storage, moved, conns = pcall(function()
+		return fakedeltools(targetplayer)
+	end)
+	if ok and storage then
+		local entry = cuffed[targetplayer.UserId]
+		if entry then
+			entry.storagefolder = storage
+			entry.movedtools = moved
+			entry.conns = conns
+		end
+	end
+
+	local conn = targetplayer.CharacterRemoving:Connect(function()
+		release(targetplayer)
+	end)
+	cuffed[targetplayer.UserId].conn = conn
+
+	pcall(function()
+		detainevent:FireClient(officer, "ShowRelease")
+	end)
+end
+
+detaincheck.OnServerInvoke = function(player, targetchar)
+	local targetplayer = specimens:GetPlayerFromCharacter(targetchar)
+	if not targetplayer then return false end
+	return not cuffed[targetplayer.UserId]
+end
+
+detainevent.OnServerEvent:Connect(function(player, action, targetchar)
+	if action == "Cuff" then
+		detain(player, targetchar)
+	elseif action == "Release" then
+		for id, info in pairs(cuffed) do
+			if info.officer == player then
+				local tgt = specimens:GetPlayerByUserId(id)
+				if tgt then release(tgt) end
+			end
+		end
+	end
+end)
+
+specimens.PlayerRemoving:Connect(function(plr)
+	for id, info in pairs(cuffed) do
+		if info.officer == plr or id == plr.UserId then
+			local tgt = specimens:GetPlayerByUserId(id)
+			if tgt then release(tgt) end
+		end
+	end
+end)
