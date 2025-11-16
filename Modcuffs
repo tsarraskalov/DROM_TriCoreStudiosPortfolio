@@ -1,6 +1,6 @@
 local tool = script.Parent
 local specimens = game:GetService("Players")
-local rs = game:GetService("rs")
+local rs = game:GetService("RunService")
 local serverstorage = game:GetService("ServerStorage")
 local detaincheck = tool:FindFirstChild("DetainCheck") 
 detaincheck.Name = "DetainCheck"
